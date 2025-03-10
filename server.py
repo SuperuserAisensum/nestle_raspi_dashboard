@@ -440,81 +440,51 @@ def receive_data():
         timestamp = request.form.get('timestamp')
         roboflow_data = json.loads(request.form.get('roboflow_outputs'))
         
-        nestle_boxes = []
-        if 'roboflow_predictions' in roboflow_data:
-            for pred in roboflow_data['roboflow_predictions']:
-                if 'x' in pred and 'y' in pred and 'width' in pred and 'height' in pred:
-                    nestle_boxes.append((pred['x'], pred['y'], pred['width'], pred['height']))
-
-        try:
-            headers = {"Authorization": "Basic " + OWLV2_API_KEY}
-            data = {"prompts": OWLV2_PROMPTS, "model": "owlv2"}
-            with open(image_path, "rb") as f:
-                files = {"image": f}
-                response = requests.post(
-                    "https://api.landing.ai/v1/tools/text-to-object-detection",
-                    files=files,
-                    data=data,
-                    headers=headers
-                )
-            owlv2_result = response.json()
-            competitor_boxes = []
-            total_competitor = 0
-            if 'data' in owlv2_result and owlv2_result['data']:
-                for obj in owlv2_result['data'][0]:
-                    if 'bounding_box' in obj:
-                        bbox = obj['bounding_box']
-                        if not is_overlap(bbox, nestle_boxes):
-                            competitor_boxes.append({
-                                "box": bbox,
-                                "confidence": obj.get("score", 0),
-                                "class": "unclassified"
-                            })
-                            total_competitor += 1
-            roboflow_data['dinox_predictions'] = competitor_boxes
-            roboflow_data['competitor_count'] = len(competitor_boxes)
-
-        except Exception as e:
-            logger.error(f"Error in OWLv2 detection: {str(e)}")
-            roboflow_data['dinox_predictions'] = []
-            roboflow_data['competitor_count'] = 0
-
+        # Use the detection data from the client instead of performing new detection
+        total_nestle = roboflow_data.get('total_nestle', 0)
+        total_unclassified = roboflow_data.get('total_unclassified', 0)
+        
+        # Store the data in the database
         with get_db_connection() as conn:
+            current_time = datetime.now().isoformat()
+            current_date = current_time.split('T')[0]
+            
+            detection_data = {
+                'roboflow_predictions': roboflow_data.get('roboflow_predictions', {}),
+                'dinox_predictions': {'unclassified': total_unclassified},
+                'counts': {'nestle': total_nestle, 'competitor': total_unclassified, 'date': current_date}
+            }
+            
             cursor = conn.execute(
                 '''INSERT INTO detection_events 
                    (device_id, timestamp, roboflow_outputs, image_path, created_at, iqi_score) 
                    VALUES (?, ?, ?, ?, ?, ?)''',
-                (device_id, timestamp, json.dumps(roboflow_data), 
-                 f'uploads/{filename}', datetime.now().isoformat(), iqi_score)
+                (device_id, timestamp, json.dumps(detection_data), 
+                 image_path, current_time, iqi_score)
             )
             event_id = cursor.lastrowid
             conn.commit()
 
-            try:
-                notification_data = {
-                    'id': event_id,
-                    'device_id': device_id,
-                    'timestamp': timestamp,
-                    'nestle_count': len(roboflow_data.get('roboflow_predictions', [])),
-                    'competitor_count': roboflow_data.get('competitor_count', 0),
-                    'image_path': f'uploads/{filename}',
-                    'iqi_score': iqi_score
-                }
-                socketio.emit('new_detection', notification_data)
-            except Exception as e:
-                logger.error(f"Error emitting socket event: {e}")
+        socketio.emit('new_detection', {
+            'id': event_id,
+            'device_id': device_id,
+            'timestamp': timestamp,
+            'date': current_date,
+            'nestle_count': total_nestle,
+            'competitor_count': total_unclassified,
+            'iqi_score': iqi_score,
+            'type': 'new_detection'
+        })
 
         return jsonify({
             'success': True,
             'message': 'Data received and processed successfully',
-            'id': event_id,
-            'image_path': f'uploads/{filename}',
-            'iqi_score': iqi_score
+            'event_id': event_id
         })
 
     except Exception as e:
-        logger.error(f"Error in receive_data: {str(e)}\n{traceback.format_exc()}")
-        return jsonify({'error': 'Internal server error'}), 500
+        logger.error(f"Error in receive_data: {str(e)}")
+        return jsonify({'error': str(e)}), 500
 
 @app.route('/images/<path:filename>')
 def get_image(filename):
