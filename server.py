@@ -161,6 +161,7 @@ def get_db_connection() -> sqlite3.Connection:
 def init_db() -> None:
     try:
         with get_db_connection() as conn:
+            # Create table if not exists with all columns
             conn.execute('''
                 CREATE TABLE IF NOT EXISTS detection_events (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -170,15 +171,41 @@ def init_db() -> None:
                     image_path TEXT NOT NULL,
                     created_at TEXT NOT NULL,
                     iqi_score REAL,
-                    location TEXT NOT NULL
+                    location TEXT
                 )
             ''')
-            # Add IQI column if it doesn't exist
+            
+            # Add columns if they don't exist
             try:
-                conn.execute('ALTER TABLE detection_events ADD COLUMN iqi_score REAL')
+                # First try to add location column without NOT NULL constraint
+                conn.execute('ALTER TABLE detection_events ADD COLUMN location TEXT')
             except sqlite3.OperationalError:
                 pass  # Column already exists
+            
+            try:
+                # Then update existing NULL values to 'Unknown'
+                conn.execute("UPDATE detection_events SET location = 'Unknown' WHERE location IS NULL")
+                # Finally, add NOT NULL constraint
+                conn.execute("ALTER TABLE detection_events RENAME TO detection_events_old")
+                conn.execute('''
+                    CREATE TABLE detection_events (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT,
+                        device_id TEXT NOT NULL,
+                        timestamp TEXT NOT NULL,
+                        roboflow_outputs TEXT NOT NULL,
+                        image_path TEXT NOT NULL,
+                        created_at TEXT NOT NULL,
+                        iqi_score REAL,
+                        location TEXT NOT NULL DEFAULT 'Unknown'
+                    )
+                ''')
+                conn.execute("INSERT INTO detection_events SELECT * FROM detection_events_old")
+                conn.execute("DROP TABLE detection_events_old")
+            except sqlite3.OperationalError:
+                pass  # Constraint might already exist
+                
             conn.commit()
+            
         logger.info("Database initialized successfully")
     except sqlite3.Error as e:
         logger.error(f"Database initialization error: {e}")
