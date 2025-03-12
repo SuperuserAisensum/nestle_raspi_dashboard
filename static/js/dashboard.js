@@ -216,9 +216,9 @@ function renderEventsTable() {
         const total = nestleCount + compCount;
         const nestlePercentage = total > 0 ? Math.round((nestleCount / total) * 100) : 0;
         const compPercentage = total > 0 ? Math.round((compCount / total) * 100) : 0;
-        const iqiScore = event.iqi_score || 0;
-        const iqiColorClass = getIQIColorClass(iqiScore);
-        const iqiQualityText = getIQIQualityText(iqiScore);
+        const iqiScore = event.iqi_score ? parseFloat(event.iqi_score).toFixed(2) : "0.00";
+        const iqiColorClass = getIQIColorClass(event.iqi_score);
+        const iqiQualityText = getIQIQualityText(event.iqi_score);
         
         row.innerHTML = `
             <td class="px-4 py-4 whitespace-nowrap text-sm text-gray-900">#${event.id}</td>
@@ -326,18 +326,9 @@ async function viewEventDetails(eventId) {
             </span>
         `;
 
-        // Update the event in the events array with the new counts
-        const eventIndex = events.findIndex(e => e.id === eventId);
-        if (eventIndex !== -1) {
-            events[eventIndex].nestle_count = data.nestleCount;
-            events[eventIndex].competitor_count = data.compCount;
-            // Re-render the table to update the counts
-            renderEventsTable();
-        }
-
         timestampElement.textContent = formatDate(data.timestamp);
 
-        // Add IQI score display
+        // Add IQI score display with 2 decimal places
         const iqiColorClass = getIQIColorClass(data.iqi_score);
         const iqiQualityText = getIQIQualityText(data.iqi_score);
         const iqiElement = document.getElementById('modalIQI');
@@ -345,7 +336,7 @@ async function viewEventDetails(eventId) {
             iqiElement.innerHTML = `
                 <div class="text-sm text-gray-500 mb-1">Image Quality Index (IQI)</div>
                 <div class="font-semibold text-gray-800 text-xl flex items-center">
-                    ${Math.round(data.iqi_score)}
+                    ${parseFloat(data.iqi_score).toFixed(2)}
                     <span class="ml-2 px-2 py-1 text-xs font-medium ${iqiColorClass} rounded-full">
                         ${iqiQualityText}
                     </span>
