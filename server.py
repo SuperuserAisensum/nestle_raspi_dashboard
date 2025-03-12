@@ -328,6 +328,7 @@ def compute_darkness_index(image):
     gray_image = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
     avg_intensity = np.mean(gray_image)
     darkness_index = (avg_intensity / 255) * 100
+    
     if darkness_index <= 35:
         score = (darkness_index / 35) * 100
     elif 35 < darkness_index <= 55:
@@ -338,6 +339,7 @@ def compute_darkness_index(image):
         score = 50 + (score / 2)
     else:
         score = ((100 - darkness_index) / 25) * 100
+        
     return round(max(0, min(100, score)), 2)
 
 def compute_intersection(line1, line2, image_shape):
@@ -366,10 +368,11 @@ def compute_intersection(line1, line2, image_shape):
 def find_vanishing_point(image, image_path):
     gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
     gray = cv2.GaussianBlur(gray, (5, 5), 0)
-    edges = cv2.Canny(gray, 50, 150, apertureSize=3)
+    edges = cv2.Canny(gray, 30, 150, apertureSize=3)  # Menurunkan threshold bawah
 
-    lines = cv2.HoughLinesP(edges, 1, np.pi / 180, threshold=100, 
-                           minLineLength=150, maxLineGap=10)
+    # Menurunkan threshold dan panjang minimum garis
+    lines = cv2.HoughLinesP(edges, 1, np.pi / 180, threshold=80, 
+                           minLineLength=100, maxLineGap=15)
     h, w = image.shape[:2]
     cx, cy = w / 2.0, h / 2.0
 
@@ -382,12 +385,14 @@ def find_vanishing_point(image, image_path):
             x1, y1, x2, y2 = line[0]
             length = math.sqrt((x2 - x1)**2 + (y2 - y1)**2)
             angle = abs(math.degrees(math.atan2(y2 - y1, x2 - x1)))
-            if (15 < angle < 75 or 105 < angle < 165) and length > 200:
+            # Memperlebar range sudut yang diterima
+            if (10 < angle < 80 or 100 < angle < 170) and length > 100:
                 filtered_lines.append(line[0])
 
         if len(filtered_lines) >= 2:
-            margin = w / 2
-            center_threshold = w / 3
+            # Memperbesar margin dan threshold
+            margin = w * 0.75
+            center_threshold = w * 0.4
             for i in range(len(filtered_lines)):
                 for j in range(i + 1, len(filtered_lines)):
                     pt = compute_intersection(filtered_lines[i], filtered_lines[j], (h, w))
@@ -405,7 +410,7 @@ def find_vanishing_point(image, image_path):
                         distances = [math.sqrt((x - cx)**2 + (y - cy)**2) for x, y in centers]
                         best_cluster_idx = np.argmin(distances)
                         vp = tuple(centers[best_cluster_idx])
-                    except Exception as e:
+                    except Exception:
                         weights = [1 / (math.sqrt((x - cx)**2 + (y - cy)**2) + 1) for x, y in intersections]
                         vp = tuple(np.average(intersections, axis=0, weights=weights))
                 else:
@@ -425,8 +430,9 @@ def compute_angle_from_vanishing_point(vp, image, focal_length=1200):
 
 def compute_angle_score(angle):
     if angle is None:
-        return 50
-    score = 100 * math.exp(-angle / 15)
+        return 75  # Nilai default lebih tinggi
+    # Menggunakan fungsi exponential yang lebih toleran
+    score = 100 * math.exp(-angle / 25)  # Mengubah dari 15 ke 25 untuk lebih toleran
     return round(max(0, min(100, score)), 2)
 
 def compute_IQI(image_path, focal_length=1200):
@@ -438,17 +444,21 @@ def compute_IQI(image_path, focal_length=1200):
     darkness_index = compute_darkness_index(image)
     vp = find_vanishing_point(image, image_path)
     
-    if vp == (image.shape[1] / 2.0, image.shape[0] / 2.0) and not any(find_vanishing_point(image, image_path)):
+    h, w = image.shape[:2]
+    default_vp = (w / 2.0, h / 2.0)
+
+    if vp == default_vp:
         angle = None
-        angle_index = 50
+        angle_index = compute_angle_score(None)
     else:
         angle = compute_angle_from_vanishing_point(vp, image, focal_length)
         angle_index = compute_angle_score(angle)
 
+    # Mengubah bobot: 70% darkness, 30% angle
     if angle is None:
-        IQI = round((darkness_index * 0.7) + (angle_index * 0.3), 2)
+        IQI = float(round((darkness_index * 0.7) + (angle_index * 0.3), 2))
     else:
-        IQI = round((darkness_index * 0.5) + (angle_index * 0.5), 2)
+        IQI = float(round((darkness_index * 0.7) + (angle_index * 0.3), 2))
 
     return IQI
 
@@ -479,8 +489,15 @@ def receive_data():
         image_path = os.path.join(app.config['UPLOAD_FOLDER'], filename)
         image_file.save(image_path)
 
-        # Calculate IQI score
-        iqi_score = compute_IQI(image_path)
+        # Get IQI score from filename and convert to float with 2 decimal places
+        iqi_score = None
+        if '_IQI' in filename:
+            try:
+                iqi_part = filename.split('_IQI')[-1].split('.jpg')[0]
+                iqi_score = float(iqi_part)
+            except:
+                # If parsing fails, don't calculate IQI
+                pass
 
         device_id = request.form.get('device_id')
         timestamp = request.form.get('timestamp')
