@@ -24,6 +24,8 @@ import requests
 import numpy as np
 import math
 from sklearn.cluster import KMeans
+from geopy.geocoders import Nominatim
+from geopy.exc import GeocoderTimedOut
 
 # -----------------------------
 # Constants
@@ -32,6 +34,22 @@ ALLOWED_EXTENSIONS = {'jpg', 'jpeg', 'png'}
 MAX_FILE_SIZE = 16 * 1024 * 1024  # 16 MB
 DEFAULT_PAGE_SIZE = 20
 DATABASE_TIMEOUT = 30.0  # SQLite timeout in seconds
+
+# Initialize geocoder
+geolocator = Nominatim(user_agent="nestle_pi_app")
+
+def get_address_from_coordinates(latitude: float, longitude: float) -> str:
+    """Convert coordinates to address using geopy"""
+    try:
+        location = geolocator.reverse((latitude, longitude), language='en')
+        if location:
+            return location.address
+        return "Address not found"
+    except GeocoderTimedOut:
+        return "Geocoding service timeout"
+    except Exception as e:
+        logger.error(f"Error getting address: {str(e)}")
+        return "Error getting address"
 
 # -----------------------------
 # Model Configuration
@@ -151,7 +169,8 @@ def init_db() -> None:
                     roboflow_outputs TEXT NOT NULL,
                     image_path TEXT NOT NULL,
                     created_at TEXT NOT NULL,
-                    iqi_score REAL
+                    iqi_score REAL,
+                    location TEXT NOT NULL
                 )
             ''')
             # Add IQI column if it doesn't exist
@@ -440,6 +459,19 @@ def receive_data():
         timestamp = request.form.get('timestamp')
         roboflow_data = json.loads(request.form.get('roboflow_outputs'))
         
+        # Get location data and convert to address
+        latitude = request.form.get('latitude')
+        longitude = request.form.get('longitude')
+        address = "Unknown"
+        
+        if latitude and longitude and latitude != 'N/A' and longitude != 'N/A':
+            try:
+                latitude = float(latitude)
+                longitude = float(longitude)
+                address = get_address_from_coordinates(latitude, longitude)
+            except ValueError:
+                logger.error(f"Invalid coordinates: lat={latitude}, long={longitude}")
+        
         # Use the detection data from the client instead of performing new detection
         total_nestle = roboflow_data.get('total_nestle', 0)
         total_unclassified = roboflow_data.get('total_unclassified', 0)
@@ -452,15 +484,20 @@ def receive_data():
             detection_data = {
                 'roboflow_predictions': roboflow_data.get('roboflow_predictions', {}),
                 'dinox_predictions': {'unclassified': total_unclassified},
-                'counts': {'nestle': total_nestle, 'competitor': total_unclassified, 'date': current_date}
+                'counts': {'nestle': total_nestle, 'competitor': total_unclassified, 'date': current_date},
+                'location': {
+                    'latitude': latitude,
+                    'longitude': longitude,
+                    'address': address
+                }
             }
             
             cursor = conn.execute(
                 '''INSERT INTO detection_events 
-                   (device_id, timestamp, roboflow_outputs, image_path, created_at, iqi_score) 
-                   VALUES (?, ?, ?, ?, ?, ?)''',
+                   (device_id, timestamp, roboflow_outputs, image_path, created_at, iqi_score, location) 
+                   VALUES (?, ?, ?, ?, ?, ?, ?)''',
                 (device_id, timestamp, json.dumps(detection_data), 
-                 image_path, current_time, iqi_score)
+                 image_path, current_time, iqi_score, address)
             )
             event_id = cursor.lastrowid
             conn.commit()
@@ -473,6 +510,7 @@ def receive_data():
             'nestle_count': total_nestle,
             'competitor_count': total_unclassified,
             'iqi_score': iqi_score,
+            'location': address,
             'type': 'new_detection'
         })
 
@@ -570,7 +608,8 @@ def get_events():
                     'unclassified_detections': competitor_count,
                     'created_at': event['created_at'],
                     'image_path': event['image_path'],
-                    'iqi_score': event['iqi_score']
+                    'iqi_score': event['iqi_score'],
+                    'location': event['location']
                 })
             except Exception as e:
                 logger.error(f"Error processing event {event['id']}: {str(e)}")
@@ -619,6 +658,16 @@ def get_event_details(event_id):
                 if not image_path.startswith('uploads/'):
                     image_path = f'uploads/{image_path}'
 
+            # Get location data from roboflow_outputs if available
+            location_data = roboflow_data.get('location', {})
+            location_info = {
+                'address': event['location'],
+                'coordinates': {
+                    'latitude': location_data.get('latitude', 'N/A'),
+                    'longitude': location_data.get('longitude', 'N/A')
+                }
+            }
+
             response = {
                 'id': event['id'],
                 'device_id': event['device_id'],
@@ -631,7 +680,8 @@ def get_event_details(event_id):
                 },
                 'image_path': image_path,
                 'created_at': event['created_at'],
-                'iqi_score': event['iqi_score']
+                'iqi_score': event['iqi_score'],
+                'location': location_info
             }
             
             return jsonify(response)
