@@ -150,6 +150,40 @@ function getIQIQualityText(iqi) {
     return 'Poor quality';
 }
 
+// Function to format location display
+function formatLocation(location) {
+    if (!location) return 'Unknown';
+    
+    let displayText = '';
+    if (typeof location === 'string') {
+        return location;
+    }
+    
+    // Format address
+    if (location.address && location.address !== 'Unknown') {
+        displayText = location.address;
+    }
+    
+    // Add Google Maps link if coordinates available
+    if (location.coordinates) {
+        const { latitude, longitude } = location.coordinates;
+        if (latitude !== 'N/A' && longitude !== 'N/A') {
+            displayText = `
+                <div class="location-container">
+                    <div class="location-address">${displayText || 'Address not available'}</div>
+                    <a href="https://www.google.com/maps?q=${latitude},${longitude}" 
+                       target="_blank" 
+                       class="text-blue-600 hover:text-blue-800 text-sm">
+                        View on Maps
+                    </a>
+                </div>
+            `;
+        }
+    }
+    
+    return displayText || 'Location not available';
+}
+
 // Function to render events table
 function renderEventsTable() {
     eventsTableBody.innerHTML = '';
@@ -167,7 +201,7 @@ function renderEventsTable() {
 
     // Keep Nestlé Products count fixed at 10
     const nestleHeader = document.querySelector('th[data-column="nestle"]') || 
-                        document.querySelector('th:nth-child(5)') ||
+                        document.querySelector('th:nth-child(6)') ||
                         document.querySelector('th:contains("NESTLÉ")');
     if (nestleHeader) {
         nestleHeader.textContent = `NESTLÉ PRODUCTS(10)`;
@@ -194,6 +228,7 @@ function renderEventsTable() {
                 <span class="font-medium text-gray-900">${iqiScore}</span>
                 <span class="ml-2 px-2 py-1 text-xs font-medium ${iqiColorClass} rounded-full">${iqiQualityText}</span>
             </td>
+            <td class="px-4 py-4 text-sm text-gray-500">${formatLocation(event.location)}</td>
             <td class="px-4 py-4 whitespace-nowrap text-sm">
                 <span class="font-medium text-gray-900">${nestleCount}</span>
                 <span class="ml-2 px-2 py-1 text-xs font-medium bg-blue-100 text-blue-800 rounded-full">${nestlePercentage}%</span>
@@ -525,3 +560,23 @@ style.textContent = `
 }
 `;
 document.head.appendChild(style);
+
+// Add CSS for location display
+const locationStyles = document.createElement('style');
+locationStyles.textContent = `
+.location-container {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+}
+
+.location-address {
+    font-weight: 500;
+    color: #374151;
+}
+
+.location-coords {
+    font-family: monospace;
+}
+`;
+document.head.appendChild(locationStyles);
