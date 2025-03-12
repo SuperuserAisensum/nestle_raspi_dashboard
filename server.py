@@ -129,7 +129,7 @@ def login():
         username = request.form.get('username')
         password = request.form.get('password')
         # Replace these with your secure credentials or integrate with a user database
-        if username != 'admin' or password != 'secret':
+        if username != 'nestle' or password != 'jHb5WB.)7M+^sq#wx.VoULhq9*y':
             error = 'Invalid credentials. Please try again.'
         else:
             session['logged_in'] = True
