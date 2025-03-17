@@ -43,7 +43,7 @@
             <!-- Latest Events -->
             <div class="card p-4 sm:p-6 mb-4 sm:mb-6">
                 <div class="flex justify-between items-center mb-3 sm:mb-4">
-                    <h3 class="text-base sm:text-lg font-semibold text-gray-800">Latest Detection Events</h3>
+                    <h3 class="text-base sm:text-lg font-semibold text-gray-800">Latest Detection Events (Newest First)</h3>
                 </div>
                 <div class="overflow-x-auto table-container">
                     <table class="min-w-full divide-y divide-gray-200">
@@ -56,12 +56,13 @@
                                 <th class="px-2 sm:px-4 py-2 sm:py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Location</th>
                                 <th class="px-2 sm:px-4 py-2 sm:py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Nestlé Products(10)</th>
                                 <th class="px-2 sm:px-4 py-2 sm:py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Unclassified</th>
+                                <th class="px-2 sm:px-4 py-2 sm:py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Total</th>
                                 <th class="px-2 sm:px-4 py-2 sm:py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Actions</th>
                             </tr>
                         </thead>
                         <tbody class="bg-white divide-y divide-gray-200" id="eventsTableBody">
                             <tr>
-                                <td colspan="7" class="px-2 sm:px-4 py-3 sm:py-4 text-center text-gray-500">
+                                <td colspan="9" class="px-2 sm:px-4 py-3 sm:py-4 text-center text-gray-500">
                                     Loading detection events...
                                 </td>
                             </tr>
@@ -98,7 +99,12 @@
                         </button>
                     </div>
                     <div class="p-3 sm:p-6">
-                        <div class="grid grid-cols-1 md:grid-cols-2 gap-3 sm:gap-6">
+                        <div class="grid grid-cols-1 md:grid-cols-2 gap-3 sm:gap-6 relative">
+                            <!-- Total count overlay -->
+                            <div id="totalOverlay" class="absolute right-4 top-4 md:right-6 md:top-4 bg-white rounded-full px-6 py-3 shadow-md z-10 text-xl md:text-2xl font-bold flex items-center justify-center" style="min-width: 120px;">
+                                Total : <span id="modalTotalOverlay" class="ml-1">0</span>
+                            </div>
+                            
                             <div id="eventImage" class="rounded-lg overflow-hidden">
                                 <img src="" alt="Detection Event" class="w-full h-auto">
                             </div>
