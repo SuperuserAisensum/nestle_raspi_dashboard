@@ -328,7 +328,6 @@ def compute_darkness_index(image):
     gray_image = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
     avg_intensity = np.mean(gray_image)
     darkness_index = (avg_intensity / 255) * 100
-    
     if darkness_index <= 35:
         score = (darkness_index / 35) * 100
     elif 35 < darkness_index <= 55:
@@ -339,7 +338,6 @@ def compute_darkness_index(image):
         score = 50 + (score / 2)
     else:
         score = ((100 - darkness_index) / 25) * 100
-        
     return round(max(0, min(100, score)), 2)
 
 def compute_intersection(line1, line2, image_shape):
@@ -410,7 +408,7 @@ def find_vanishing_point(image, image_path):
                         distances = [math.sqrt((x - cx)**2 + (y - cy)**2) for x, y in centers]
                         best_cluster_idx = np.argmin(distances)
                         vp = tuple(centers[best_cluster_idx])
-                    except Exception:
+                    except Exception as e:
                         weights = [1 / (math.sqrt((x - cx)**2 + (y - cy)**2) + 1) for x, y in intersections]
                         vp = tuple(np.average(intersections, axis=0, weights=weights))
                 else:
@@ -446,7 +444,7 @@ def compute_IQI(image_path, focal_length=1200):
     
     h, w = image.shape[:2]
     default_vp = (w / 2.0, h / 2.0)
-
+    
     if vp == default_vp:
         angle = None
         angle_index = compute_angle_score(None)
@@ -456,9 +454,9 @@ def compute_IQI(image_path, focal_length=1200):
 
     # Mengubah bobot: 70% darkness, 30% angle
     if angle is None:
-        IQI = float(round((darkness_index * 0.7) + (angle_index * 0.3), 2))
+        IQI = round((darkness_index * 0.7) + (angle_index * 0.3), 2)
     else:
-        IQI = float(round((darkness_index * 0.7) + (angle_index * 0.3), 2))
+        IQI = round((darkness_index * 0.7) + (angle_index * 0.3), 2)
 
     return IQI
 
@@ -489,15 +487,19 @@ def receive_data():
         image_path = os.path.join(app.config['UPLOAD_FOLDER'], filename)
         image_file.save(image_path)
 
-        # Get IQI score from filename and convert to float with 2 decimal places
+        # Get IQI score from request if available, otherwise calculate it
         iqi_score = None
-        if '_IQI' in filename:
+        if request.form.get('iqi_score'):
             try:
-                iqi_part = filename.split('_IQI')[-1].split('.jpg')[0]
-                iqi_score = float(iqi_part)
-            except:
-                # If parsing fails, don't calculate IQI
-                pass
+                iqi_score = float(request.form.get('iqi_score'))
+                logger.info(f"Using IQI score from request: {iqi_score}")
+            except (ValueError, TypeError):
+                logger.warning("Invalid IQI score from request, will calculate.")
+                
+        # Calculate IQI score only if not provided in request
+        if iqi_score is None:
+            iqi_score = compute_IQI(image_path)
+            logger.info(f"Calculated IQI score: {iqi_score}")
 
         device_id = request.form.get('device_id')
         timestamp = request.form.get('timestamp')
@@ -598,6 +600,7 @@ def get_events():
         end_date = request.args.get('end_date')
         page = max(1, request.args.get('page', 1, type=int))
         limit = min(50, request.args.get('limit', DEFAULT_PAGE_SIZE, type=int))
+        sort_order = request.args.get('sort', 'desc').upper()
 
         query = 'SELECT * FROM detection_events WHERE 1=1'
         params = []
@@ -612,7 +615,12 @@ def get_events():
             query += ' AND timestamp <= ?'
             params.append(end_date)
 
-        query += ' ORDER BY timestamp DESC LIMIT ? OFFSET ?'
+        # Allow changing the sort order with the sort parameter
+        if sort_order == 'ASC':
+            query += ' ORDER BY id ASC LIMIT ? OFFSET ?'
+        else:
+            query += ' ORDER BY id DESC LIMIT ? OFFSET ?'
+        
         params.extend([limit, (page - 1) * limit])
 
         with get_db_connection() as conn:
