@@ -43,6 +43,7 @@ document.addEventListener('DOMContentLoaded', () => {
     // Modal close button
     closeModalBtn.addEventListener('click', () => {
         eventDetailModal.classList.add('hidden');
+        eventDetailModal.classList.remove('flex');
     });
 });
 
@@ -191,7 +192,7 @@ function renderEventsTable() {
     if (!events || !events.length) {
         eventsTableBody.innerHTML = `
             <tr>
-                <td colspan="7" class="px-4 py-4 text-center text-gray-500">
+                <td colspan="9" class="px-4 py-4 text-center text-gray-500">
                     No detection events found
                 </td>
             </tr>
@@ -216,9 +217,9 @@ function renderEventsTable() {
         const total = nestleCount + compCount;
         const nestlePercentage = total > 0 ? Math.round((nestleCount / total) * 100) : 0;
         const compPercentage = total > 0 ? Math.round((compCount / total) * 100) : 0;
-        const iqiScore = event.iqi_score ? parseFloat(event.iqi_score).toFixed(2) : "0.00";
-        const iqiColorClass = getIQIColorClass(event.iqi_score);
-        const iqiQualityText = getIQIQualityText(event.iqi_score);
+        const iqiScore = event.iqi_score || 0;
+        const iqiColorClass = getIQIColorClass(iqiScore);
+        const iqiQualityText = getIQIQualityText(iqiScore);
         
         row.innerHTML = `
             <td class="px-4 py-4 whitespace-nowrap text-sm text-gray-900">#${event.id}</td>
@@ -236,6 +237,9 @@ function renderEventsTable() {
             <td class="px-4 py-4 whitespace-nowrap text-sm">
                 <span class="font-medium text-gray-900">${compCount}</span>
                 <span class="ml-2 px-2 py-1 text-xs font-medium bg-red-100 text-red-800 rounded-full">${compPercentage}%</span>
+            </td>
+            <td class="px-4 py-4 whitespace-nowrap text-sm">
+                <span class="font-medium text-gray-900">${total}</span>
             </td>
             <td class="px-4 py-4 whitespace-nowrap text-sm text-blue-600 hover:text-blue-800">
                 <div class="flex space-x-2">
@@ -310,6 +314,7 @@ async function viewEventDetails(eventId) {
         // Update counts with percentages
         const nestleCountElement = document.getElementById('modalNestleCount');
         const compCountElement = document.getElementById('modalCompCount');
+        const totalOverlayElement = document.getElementById('modalTotalOverlay');
         const timestampElement = document.getElementById('modalTimestamp');
         
         nestleCountElement.innerHTML = `
@@ -325,10 +330,21 @@ async function viewEventDetails(eventId) {
                 ${compPercent}%
             </span>
         `;
+        
+        totalOverlayElement.textContent = total;
+
+        // Update the event in the events array with the new counts
+        const eventIndex = events.findIndex(e => e.id === eventId);
+        if (eventIndex !== -1) {
+            events[eventIndex].nestle_count = data.nestleCount;
+            events[eventIndex].competitor_count = data.compCount;
+            // Re-render the table to update the counts
+            renderEventsTable();
+        }
 
         timestampElement.textContent = formatDate(data.timestamp);
 
-        // Add IQI score display with 2 decimal places
+        // Add IQI score display
         const iqiColorClass = getIQIColorClass(data.iqi_score);
         const iqiQualityText = getIQIQualityText(data.iqi_score);
         const iqiElement = document.getElementById('modalIQI');
@@ -336,7 +352,7 @@ async function viewEventDetails(eventId) {
             iqiElement.innerHTML = `
                 <div class="text-sm text-gray-500 mb-1">Image Quality Index (IQI)</div>
                 <div class="font-semibold text-gray-800 text-xl flex items-center">
-                    ${parseFloat(data.iqi_score).toFixed(2)}
+                    ${Math.round(data.iqi_score)}
                     <span class="ml-2 px-2 py-1 text-xs font-medium ${iqiColorClass} rounded-full">
                         ${iqiQualityText}
                     </span>
@@ -416,6 +432,16 @@ async function viewEventDetails(eventId) {
 
         // Show modal
         document.getElementById('eventDetailModal').classList.remove('hidden');
+        document.getElementById('eventDetailModal').classList.add('flex');
+        
+        // Ensure the overlay animates in properly
+        setTimeout(() => {
+            const totalOverlay = document.getElementById('totalOverlay');
+            if (totalOverlay) {
+                totalOverlay.style.opacity = '1';
+                totalOverlay.style.transform = 'translateY(0)';
+            }
+        }, 50);
         
     } catch (error) {
         console.error('Error viewing event details:', error);
@@ -437,7 +463,7 @@ function startAutoRefresh() {
 // Fetch event data from server
 async function fetchEvents() {
     try {
-        let url = `/api/events?page=${currentPage}&limit=${pageSize}`;
+        let url = `/api/events?page=${currentPage}&limit=${pageSize}&sort=desc`;
         
         const response = await fetch(url);
         if (!response.ok) {
@@ -520,7 +546,7 @@ async function fetchEvents() {
         console.error("Error fetching events:", error);
         eventsTableBody.innerHTML = `
             <tr>
-                <td colspan="7" class="px-4 py-4 text-center text-red-500">
+                <td colspan="9" class="px-4 py-4 text-center text-red-500">
                     Error loading detection events: ${error.message}
                 </td>
             </tr>
@@ -528,7 +554,7 @@ async function fetchEvents() {
     }
 }
 
-// Tambahkan CSS untuk animasi toast
+// Add CSS for toast notification and location display
 const style = document.createElement('style');
 style.textContent = `
 .toast-notification {
@@ -548,6 +574,17 @@ style.textContent = `
 
 .toast-notification.show {
     transform: translateX(0);
+}
+
+#totalOverlay {
+    transition: all 0.3s ease;
+    transform: translateY(-10px);
+    opacity: 0;
+}
+
+#eventDetailModal.flex #totalOverlay {
+    transform: translateY(0);
+    opacity: 1;
 }
 `;
 document.head.appendChild(style);
